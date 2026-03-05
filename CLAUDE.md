@@ -1,4 +1,4 @@
-# extract-zone-file
+# dzone
 
 CLI tool to extract DNS zone files from any domain.
 
@@ -30,6 +30,12 @@ make clean
 │   └── resolver.go      # DNS query logic (authoritative NS discovery, per-type queries, AXFR)
 ├── zone/
 │   └── formatter.go     # BIND zone file output formatting
+├── npm/
+│   ├── package.json     # npm package (dzone-cli)
+│   ├── install.js       # Downloads platform binary on npm install
+│   └── bin/dzone        # Node wrapper that executes the Go binary
+├── .github/workflows/
+│   └── release.yml      # Automated release: GitHub + Homebrew + npm
 ├── Makefile             # Cross-compilation targets
 └── go.mod               # Single dependency: github.com/miekg/dns
 ```
@@ -42,3 +48,18 @@ make clean
 - Output follows standard BIND zone file format
 - `dns.RR.String()` from miekg/dns produces valid BIND record lines
 - Internal package named `resolver` (not `dns`) to avoid shadowing `miekg/dns` import
+
+## Release
+
+Tag push triggers automated release via `.github/workflows/release.yml`:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+Automatically: builds binaries, creates GitHub Release, updates Homebrew tap, publishes to npm.
+
+Secrets required in repo settings:
+- `NPM_TOKEN` — npm granular access token with publish + bypass 2FA
+- `HOMEBREW_TAP_TOKEN` — GitHub PAT with write access to `prenansantana/homebrew-tap`
