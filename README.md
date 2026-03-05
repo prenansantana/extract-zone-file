@@ -13,6 +13,18 @@ brew tap prenansantana/tap
 brew install dzone
 ```
 
+### npx (no install)
+
+```bash
+npx dzone-cli example.com
+```
+
+### npm (global)
+
+```bash
+npm install -g dzone-cli
+```
+
 ### Go
 
 ```bash

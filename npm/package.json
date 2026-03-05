@@ -1,0 +1,18 @@
+{
+  "name": "dzone-cli",
+  "version": "0.1.0",
+  "description": "Extract DNS zone files from any domain",
+  "bin": {
+    "dzone": "bin/dzone"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prenansantana/extract-zone-file"
+  },
+  "keywords": ["dns", "zone", "zonefile", "bind", "dig", "cli"],
+  "license": "MIT",
+  "files": ["bin", "install.js"]
+}
