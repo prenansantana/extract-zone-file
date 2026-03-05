@@ -108,3 +108,18 @@ A, AAAA, CNAME, MX, NS, SOA, TXT, SRV, CAA, PTR
 make build          # local binary
 make build-all      # cross-compile (linux, darwin, windows)
 ```
+
+## Release
+
+Releases are fully automated via GitHub Actions. To publish a new version:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+This automatically:
+1. Cross-compiles binaries for Linux, macOS, and Windows
+2. Creates a GitHub Release with all binaries
+3. Updates the Homebrew formula with new checksums
+4. Publishes the new version to npm
