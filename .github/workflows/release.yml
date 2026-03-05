@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build all platforms
+        run: |
+          mkdir -p dist
+          GOOS=linux   GOARCH=amd64 go build -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}" -o dist/dzone-linux-amd64 .
+          GOOS=linux   GOARCH=arm64 go build -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}" -o dist/dzone-linux-arm64 .
+          GOOS=darwin  GOARCH=amd64 go build -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}" -o dist/dzone-darwin-amd64 .
+          GOOS=darwin  GOARCH=arm64 go build -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}" -o dist/dzone-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.version=${{ steps.version.outputs.VERSION }}" -o dist/dzone-windows-amd64.exe .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+      - name: Update Homebrew formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          SHA_DARWIN_ARM64=$(shasum -a 256 dist/dzone-darwin-arm64 | cut -d' ' -f1)
+          SHA_DARWIN_AMD64=$(shasum -a 256 dist/dzone-darwin-amd64 | cut -d' ' -f1)
+          SHA_LINUX_AMD64=$(shasum -a 256 dist/dzone-linux-amd64 | cut -d' ' -f1)
+          SHA_LINUX_ARM64=$(shasum -a 256 dist/dzone-linux-arm64 | cut -d' ' -f1)
+
+          git clone https://x-access-token:${GH_TOKEN}@github.com/prenansantana/homebrew-tap.git /tmp/homebrew-tap
+          cd /tmp/homebrew-tap
+
+          cat > Formula/dzone.rb << EOF
+          class Dzone < Formula
+            desc "Extract DNS zone files from any domain"
+            homepage "https://github.com/prenansantana/extract-zone-file"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/prenansantana/extract-zone-file/releases/download/v${VERSION}/dzone-darwin-arm64"
+                sha256 "${SHA_DARWIN_ARM64}"
+              else
+                url "https://github.com/prenansantana/extract-zone-file/releases/download/v${VERSION}/dzone-darwin-amd64"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/prenansantana/extract-zone-file/releases/download/v${VERSION}/dzone-linux-arm64"
+                sha256 "${SHA_LINUX_ARM64}"
+              else
+                url "https://github.com/prenansantana/extract-zone-file/releases/download/v${VERSION}/dzone-linux-amd64"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              binary = Dir["dzone-*"].first || "dzone"
+              bin.install binary => "dzone"
+            end
+
+            test do
+              assert_match "dzone", shell_output("#{bin}/dzone -v")
+            end
+          end
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/dzone.rb
+          git commit -m "Update dzone to v${VERSION}"
+          git push
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          cd npm
+          # Update version in package.json
+          node -e "
+            const pkg = require('./package.json');
+            pkg.version = '${VERSION}';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          # Update version in install.js
+          sed -i "s/const VERSION = \".*\"/const VERSION = \"${VERSION}\"/" install.js
+          npm publish
