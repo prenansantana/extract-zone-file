@@ -48,6 +48,7 @@ make clean
 - Output follows standard BIND zone file format
 - `dns.RR.String()` from miekg/dns produces valid BIND record lines
 - Internal package named `resolver` (not `dns`) to avoid shadowing `miekg/dns` import
+- Subdomain CNAME discovery uses Certificate Transparency (crt.sh) with fallback to a hardcoded list of common subdomains
 
 ## Release
 

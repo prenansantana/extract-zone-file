@@ -1,13 +1,22 @@
 package resolver
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/miekg/dns"
 )
+
+var fallbackSubdomains = []string{
+	"www", "mail", "ftp", "cdn", "api", "app", "dev",
+	"staging", "blog", "shop", "store", "admin", "portal",
+	"webmail", "smtp", "imap", "pop", "ns1", "ns2",
+	"vpn", "remote", "m", "mobile", "autodiscover",
+}
 
 var defaultRecordTypes = []uint16{
 	dns.TypeSOA,
@@ -88,6 +97,15 @@ func Resolve(domain, server string, tryAXFR bool, types string) (*RecordSet, err
 	}
 
 	wg.Wait()
+
+	// Query discovered subdomains for CNAME records.
+	for _, t := range recordTypes {
+		if t == dns.TypeCNAME {
+			cnameRecords := querySubdomainCNAMEs(domain, server)
+			rs.Records = append(rs.Records, cnameRecords...)
+			break
+		}
+	}
 
 	if len(rs.Records) == 0 {
 		return nil, fmt.Errorf("no DNS records found for %s", domain)
@@ -182,6 +200,80 @@ func attemptAXFR(domain, server string) ([]dns.RR, error) {
 	}
 
 	return records, nil
+}
+
+func discoverSubdomains(domain string) []string {
+	// Strip trailing dot for the HTTP query.
+	bare := strings.TrimSuffix(domain, ".")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get("https://crt.sh/?q=%25." + bare + "&output=json")
+	if err != nil {
+		return fallbackSubdomains
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fallbackSubdomains
+	}
+
+	var entries []struct {
+		NameValue string `json:"name_value"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return fallbackSubdomains
+	}
+
+	seen := make(map[string]bool)
+	var subdomains []string
+	for _, e := range entries {
+		for _, name := range strings.Split(e.NameValue, "\n") {
+			name = strings.TrimSpace(strings.ToLower(name))
+			// Skip wildcards and the apex itself.
+			if strings.HasPrefix(name, "*.") || name == bare || name == "" {
+				continue
+			}
+			// Only keep direct subdomains of the domain.
+			if !strings.HasSuffix(name, "."+bare) {
+				continue
+			}
+			if !seen[name] {
+				seen[name] = true
+				subdomains = append(subdomains, name)
+			}
+		}
+	}
+
+	if len(subdomains) == 0 {
+		return fallbackSubdomains
+	}
+	return subdomains
+}
+
+func querySubdomainCNAMEs(domain, server string) []dns.RR {
+	subdomains := discoverSubdomains(domain)
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var results []dns.RR
+
+	for _, sub := range subdomains {
+		wg.Add(1)
+		go func(s string) {
+			defer wg.Done()
+			fqdn := dns.Fqdn(s)
+			records, err := queryRecords(fqdn, dns.TypeCNAME, server)
+			if err != nil || len(records) == 0 {
+				return
+			}
+			mu.Lock()
+			results = append(results, records...)
+			mu.Unlock()
+		}(sub)
+	}
+
+	wg.Wait()
+	return results
 }
 
 func parseTypes(types string) []uint16 {
