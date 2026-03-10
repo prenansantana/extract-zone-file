@@ -100,7 +100,8 @@ A, AAAA, CNAME, MX, NS, SOA, TXT, SRV, CAA, PTR
 1. Discovers authoritative nameservers for the domain
 2. Attempts a zone transfer (AXFR) — works when allowed
 3. Falls back to querying each record type individually (concurrent)
-4. Formats results as a standard BIND zone file
+4. Discovers subdomains via Certificate Transparency (crt.sh) and queries each for CNAME records
+5. Formats results as a standard BIND zone file
 
 ## Build
 
