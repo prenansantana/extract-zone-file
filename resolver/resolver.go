@@ -244,8 +244,13 @@ func discoverSubdomains(domain string) []string {
 		}
 	}
 
-	if len(subdomains) == 0 {
-		return fallbackSubdomains
+	// Always merge common subdomains — CT logs miss non-HTTPS entries like mail.
+	for _, fb := range fallbackSubdomains {
+		full := fb + "." + bare
+		if !seen[full] {
+			seen[full] = true
+			subdomains = append(subdomains, full)
+		}
 	}
 	return subdomains
 }
